@@ -1,0 +1,129 @@
+<!DOCTYPE HTML>
+<html>
+    <head><meta charset="utf-8"></head>
+    <!-- Algo :generate data randomly in array of N points and categorize them by colour into 2 categories
+    , create equation of line with variable weights w[0]*x+w[1]*y+b=0.
+    define output= yi*(wxi+b)/||w||, cycle through  N points evaluating output sign, if>0 correctly classified else incorrect
+If incorrect then update weight as wf=wi+yixi  b=yi and plot the line again-->
+    <style></style>
+    <script src="https://d3js.org/d3.v3.min.js"></script>
+    <script src="https://code.jquery.com/jquery-1.10.2.min.js"></script>
+    <!-- <script src="http://localhost/lib/d3.v3.min.js"></script>
+    <script src="http://localhost/lib/jquery-1.10.2.min.js"></script> -->
+    <body></body>  
+    <script>
+    var width=$(document).width();
+    var height=$(document).height();
+    var N=10;
+    var boundaryPoints={};
+    var categories=2;
+    var cScale=d3.scale.linear().domain(d3.range(categories)).range(['red','blue']);
+    var foci=[{x:Math.random()*.5*width,y:Math.random()*.5*height},{x:Math.random()*.5*width,y:Math.random()*.5*height}];
+    data=d3.range(N).map(function(d){return {x:~~(Math.random()*width),y:~~(Math.random()*height),id:d,class:~~(Math.random()*2)}});
+    var g_classCorrect=true;
+    var g_iter=0;
+
+    function fn_initialize(){
+        data.forEach(function(d,i){
+            if(d.class==1){
+            data[i].x=foci[0].x+.1*data[i].x;
+            data[i].y=foci[0].y+.1*data[i].y;
+            }
+            else{data[i].class=-1;
+            data[i].x=foci[1].x+.1*data[i].x;
+            data[i].y=foci[1].y+.1*data[i].y;}
+        })
+        boundaryPoints.wf=[1,1];
+        boundaryPoints.b=-400;
+        boundaryPoints.ymin=0;
+        boundaryPoints.ymax=height;
+        boundaryPoints.Norm=0;
+        fn_plotData(data);
+        fn_generateBoundary(boundaryPoints);
+        fn_plotBoundary(boundaryPoints);
+        fn_validateClass(boundaryPoints,data);
+        setInterval(function() {
+            if(g_iter<=10 && g_classCorrect==false ){
+                g_iter++;    
+                g_classCorrect=true;
+                fn_validateClass(boundaryPoints,data);
+            }else{return;}
+         }, 1000);
+    }
+    fn_initialize();
+    function fn_plotData(dPoints){
+        var svg=d3.select("body").append("svg").attr("height",height).attr("width",width);//need to specify svg height and width always
+        svg_data=svg.selectAll("g").data(dPoints,dPoints.class);
+        svg_enter=svg_data.enter().append("g").attr("transform",d=>"translate("+d.x+","+d.y+")");
+        svg_enter.append("circle").attr("r",3).style("fill",d=>cScale(d.class)).style("stroke","black");
+        svg_enter.append("text").attr("x",-10).attr("y",+10).text(d=>d.id+"_"+d.class).style("stroke-width",1).style("font-size",10);
+    }
+
+    function fn_plotBoundary(bdryPoint){
+        var svg=d3.select("body").select("svg");
+        svg.selectAll("path").remove();
+        svg.append("path").attr("d","M "+bdryPoint.source.x+","+bdryPoint.source.y 
+        + " L " +bdryPoint.target.x+","+bdryPoint.target.y)
+        .attr("stroke","green");
+        svg.selectAll("text#slopeText").remove();
+        svg.append("text").attr("id","slopeText").attr("x",(bdryPoint.source.x+bdryPoint.target.x)/2).attr("y",(bdryPoint.source.y+bdryPoint.target.y)/2)
+        .text(bdryPoint.wf[0].toFixed(2) +"x+"+bdryPoint.wf[1].toFixed(2) +"y+"+bdryPoint.b);
+
+    };
+
+    function fn_generateBoundary(boundaryPoints){
+        // w[0]*x+w[1]*y+b=0 so x=(-w[1]*ymin-b)/w[0]
+        if(boundaryPoints.wf[0]!==0 && boundaryPoints.wf[1]!==0)
+    {
+        boundaryPoints.source={x:-(boundaryPoints.wf[1]*boundaryPoints.ymin+boundaryPoints.b)/boundaryPoints.wf[0],y:boundaryPoints.ymin};
+        boundaryPoints.target={x:-(boundaryPoints.wf[1]*boundaryPoints.ymax+boundaryPoints.b)/boundaryPoints.wf[0],y:boundaryPoints.ymax};
+        boundaryPoints.Norm=Math.sqrt(Math.pow(boundaryPoints.wf[0],2)+Math.pow(boundaryPoints.wf[1],2));
+        console.log("uses b",boundaryPoints.b);
+    }
+        else if (boundaryPoints.wf[0]!==0 && boundaryPoints.wf[1]==0){
+        boundaryPoints.source={x:0,y:-boundaryPoints.b/boundaryPoints.wf[1]};
+        boundaryPoints.target={x:width,y:-boundaryPoints.b/boundaryPoints.wf[1]};
+        }
+        else if (boundaryPoints.wf[0]==0 && boundaryPoints.wf[1]!==0){
+        boundaryPoints.source={y:0,x:-boundaryPoints.b/boundaryPoints.wf[0]};
+        boundaryPoints.target={y:height,x:-boundaryPoints.b/boundaryPoints.wf[0]};
+        }
+    };
+    function fn_validateClass(boundaryPoints,data){
+        data.forEach(function(d){
+            if(fn_calculateSignedDistance(d,boundaryPoints)!==fn_signof(d)){
+                g_classCorrect=g_classCorrect && false;
+                fn_updateWeights(d,boundaryPoints);
+                fn_generateBoundary(boundaryPoints);
+                fn_plotBoundary(boundaryPoints);
+                console.log("iter number",g_iter);
+               
+                
+            }
+            else{g_classCorrect=g_classCorrect && true;
+
+            }
+        })
+
+    }
+    function fn_calculateSignedDistance(dPoint,bdryPoint){
+        var dist;
+        if (bdryPoint.Norm==0)
+        {dist=dPoint.y;}
+        else {dist=(bdryPoint.wf[0]*dPoint.x+bdryPoint.wf[1]*dPoint.y + bdryPoint.b)/bdryPoint.Norm;}
+        // console.log("dist of id",dPoint,"is",dist);
+        if(dist>0){return 1;}else{return -1;}
+    }
+    function fn_signof(y){
+        return y.class;
+    }
+    function fn_updateWeights(dPoint,bdryPoint){
+        // console.log("previous w,b",bdryPoint.wf,bdryPoint.b);
+        bdryPoint.wf[0]+=dPoint.x*dPoint.class;
+        bdryPoint.wf[1]+=dPoint.y*dPoint.class;
+        bdryPoint.b+=dPoint.class;//bdryPoint.Norm*dPoint.class;
+        // console.log("new w,b",bdryPoint.wf,bdryPoint.b);
+    }
+
+    </script>
+ </html>   
